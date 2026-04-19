@@ -25,20 +25,18 @@ public class OllamaService {
     private int timeoutSeconds;
 
     private WebClient getWebClient() {
-        return WebClient.builder()
-            .baseUrl(ollamaHost)
-            .build();
+        return WebClient.builder().baseUrl(ollamaHost).build();
     }
 
     public boolean isAvailable() {
         try {
             getWebClient()
-                .get()
-                .uri("/api/tags")
-                .retrieve()
-                .bodyToMono(String.class)
-                .timeout(Duration.ofSeconds(2))
-                .block();
+                    .get()
+                    .uri("/api/tags")
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(Duration.ofSeconds(2))
+                    .block();
             return true;
         } catch (Exception e) {
             return false;
@@ -47,19 +45,16 @@ public class OllamaService {
 
     public float[] embed(String text) {
         try {
-            Map<String, Object> request = Map.of(
-                "model", embedModel,
-                "prompt", text
-            );
+            Map<String, Object> request = Map.of("model", embedModel, "prompt", text);
 
             Map<String, Object> response = getWebClient()
-                .post()
-                .uri("/api/embeddings")
-                .bodyValue(request)
-                .retrieve()
-                .bodyToMono(Map.class)
-                .timeout(Duration.ofSeconds(timeoutSeconds))
-                .block();
+                    .post()
+                    .uri("/api/embeddings")
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .timeout(Duration.ofSeconds(timeoutSeconds))
+                    .block();
 
             if (response != null && response.containsKey("embedding")) {
                 List<Double> embedding = (List<Double>) response.get("embedding");
@@ -79,20 +74,16 @@ public class OllamaService {
 
     public String generate(String prompt) {
         try {
-            Map<String, Object> request = Map.of(
-                "model", generateModel,
-                "prompt", prompt,
-                "stream", false
-            );
+            Map<String, Object> request = Map.of("model", generateModel, "prompt", prompt, "stream", false);
 
             Map<String, Object> response = getWebClient()
-                .post()
-                .uri("/api/generate")
-                .bodyValue(request)
-                .retrieve()
-                .bodyToMono(Map.class)
-                .timeout(Duration.ofSeconds(timeoutSeconds))
-                .block();
+                    .post()
+                    .uri("/api/generate")
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .timeout(Duration.ofSeconds(timeoutSeconds))
+                    .block();
 
             if (response != null && response.containsKey("response")) {
                 return (String) response.get("response");

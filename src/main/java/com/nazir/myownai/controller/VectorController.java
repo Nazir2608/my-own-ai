@@ -19,17 +19,11 @@ public class VectorController {
     private VectorDBService vectorDBService;
 
     @GetMapping("/search")
-    public ResponseEntity<SearchResult> search(
-            @RequestParam String v,
-            @RequestParam(defaultValue = "5") int k,
-            @RequestParam(defaultValue = "cosine") String metric,
-            @RequestParam(defaultValue = "hnsw") String algo) {
-        
+    public ResponseEntity<SearchResult> search(@RequestParam String v, @RequestParam(defaultValue = "5") int k, @RequestParam(defaultValue = "cosine") String metric, @RequestParam(defaultValue = "hnsw") String algo) {
         float[] query = parseFloatArray(v);
         if (query.length != vectorDBService.getDimensions()) {
             return ResponseEntity.badRequest().build();
         }
-
         SearchResult result = vectorDBService.search(query, k, metric, algo);
         return ResponseEntity.ok(result);
     }
@@ -39,7 +33,7 @@ public class VectorController {
         String metadata = (String) body.get("metadata");
         String category = (String) body.get("category");
         List<Double> embeddingList = (List<Double>) body.get("embedding");
-        
+
         float[] embedding = new float[embeddingList.size()];
         for (int i = 0; i < embeddingList.size(); i++) {
             embedding[i] = embeddingList.get(i).floatValue();
@@ -61,11 +55,7 @@ public class VectorController {
     }
 
     @GetMapping("/benchmark")
-    public ResponseEntity<Map<String, Object>> benchmark(
-            @RequestParam String v,
-            @RequestParam(defaultValue = "5") int k,
-            @RequestParam(defaultValue = "cosine") String metric) {
-        
+    public ResponseEntity<Map<String, Object>> benchmark(@RequestParam String v, @RequestParam(defaultValue = "5") int k, @RequestParam(defaultValue = "cosine") String metric) {
         float[] query = parseFloatArray(v);
         Map<String, Object> result = vectorDBService.benchmark(query, k, metric);
         return ResponseEntity.ok(result);
@@ -79,10 +69,10 @@ public class VectorController {
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> stats() {
         return ResponseEntity.ok(Map.of(
-            "count", vectorDBService.size(),
-            "dims", vectorDBService.getDimensions(),
-            "algorithms", List.of("bruteforce", "kdtree", "hnsw"),
-            "metrics", List.of("euclidean", "cosine", "manhattan")
+                "count", vectorDBService.size(),
+                "dims", vectorDBService.getDimensions(),
+                "algorithms", List.of("bruteforce", "kdtree", "hnsw"),
+                "metrics", List.of("euclidean", "cosine", "manhattan")
         ));
     }
 
