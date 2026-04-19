@@ -1,6 +1,4 @@
 package com.nazir.myownai.service;
-
-import com.myownai.algorithm.*;
 import com.nazir.myownai.algorithm.BruteForce;
 import com.nazir.myownai.algorithm.DistanceMetric;
 import com.nazir.myownai.algorithm.HNSW;

@@ -1,35 +1,41 @@
 package com.nazir.myownai.controller;
 
+import com.nazir.myownai.dto.AskQuestionRequest;
+import com.nazir.myownai.dto.AskResponse;
+import com.nazir.myownai.dto.DocumentResponse;
+import com.nazir.myownai.dto.InsertDocumentRequest;
+import com.nazir.myownai.dto.SearchContextResponse;
 import com.nazir.myownai.model.DocItem;
 import com.nazir.myownai.service.DocumentDBService;
 import com.nazir.myownai.service.OllamaService;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
 @CrossOrigin(origins = "*")
 public class DocumentController {
 
-    @Autowired
-    private DocumentDBService documentDBService;
+    private final DocumentDBService documentDBService;
+    private final OllamaService ollamaService;
 
-    @Autowired
-    private OllamaService ollamaService;
+    public DocumentController(DocumentDBService documentDBService, OllamaService ollamaService) {
+        this.documentDBService = documentDBService;
+        this.ollamaService = ollamaService;
+    }
 
     @PostMapping("/doc/insert")
-    public ResponseEntity<Map<String, Object>> insertDocument(@RequestBody Map<String, String> body) {
-        String title = body.get("title");
-        String text = body.get("text");
-
-        if (title == null || text == null || title.isEmpty() || text.isEmpty()) {
-            return ResponseEntity.badRequest().body(
-                Map.of("error", "Title and text are required")
-            );
+    public ResponseEntity<?> insertDocument(@RequestBody InsertDocumentRequest request) {
+        String title = request.getTitle();
+        String text = request.getText();
+        if (title == null || title.isBlank() || text == null || text.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Title and text are required"));
         }
 
         List<String> chunks = documentDBService.chunkText(text);
@@ -37,25 +43,15 @@ public class DocumentController {
 
         for (int i = 0; i < chunks.size(); i++) {
             float[] embedding = ollamaService.embed(chunks.get(i));
-            
             if (embedding.length == 0) {
-                return ResponseEntity.status(503).body(
-                    Map.of("error", "Ollama unavailable. Make sure it's running and nomic-embed-text is installed.")
-                );
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("error", "Ollama unavailable. Ensure it is running."));
             }
-
-            String chunkTitle = chunks.size() > 1 
-                ? title + " [" + (i + 1) + "/" + chunks.size() + "]"
-                : title;
-            
-            ids.add(documentDBService.insert(chunkTitle, chunks.get(i), embedding));
+            String chunkTitle = chunks.size() > 1 ? title + " [" + (i + 1) + "/" + chunks.size() + "]" : title;
+            int id = documentDBService.insert(chunkTitle, chunks.get(i), embedding);
+            ids.add(id);
         }
 
-        return ResponseEntity.ok(Map.of(
-            "ids", ids,
-            "chunks", chunks.size(),
-            "dims", documentDBService.getDimensions()
-        ));
+        return ResponseEntity.ok(Map.of("ids", ids, "chunks", chunks.size(), "dims", documentDBService.getDimensions()));
     }
 
     @DeleteMapping("/doc/delete/{id}")
@@ -65,126 +61,114 @@ public class DocumentController {
     }
 
     @GetMapping("/doc/list")
-    public ResponseEntity<List<Map<String, Object>>> listDocuments() {
-        List<DocItem> docs = documentDBService.getAllDocs();
-        
-        List<Map<String, Object>> response = docs.stream()
-                .map(doc -> Map.<String, Object>of(
-                "id", doc.getId(),
-                "title", doc.getTitle(),
-                "preview", doc.getPreview(),
-                "words", doc.getWordCount()
-            ))
-            .collect(Collectors.toList());
-        
+    public ResponseEntity<List<DocumentResponse>> listDocuments() {
+        List<DocumentResponse> response = documentDBService.getAllDocs()
+                .stream()
+                .map(doc -> new DocumentResponse(
+                                doc.getId(),
+                                doc.getTitle(),
+                                doc.getPreview(),
+                                doc.getWordCount()
+                        )
+                )
+                .toList();
+
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/doc/search")
-    public ResponseEntity<Map<String, Object>> searchDocuments(@RequestBody Map<String, Object> body) {
-        String question = (String) body.get("question");
-        int k = body.containsKey("k") ? ((Number) body.get("k")).intValue() : 3;
-
-        if (question == null || question.isEmpty()) {
+    public ResponseEntity<?> searchDocuments(@RequestBody AskQuestionRequest request) {
+        String question = request.getQuestion();
+        int k = request.getK() != null ? request.getK() : 3;
+        if (question == null || question.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Question is required"));
         }
-
         float[] queryEmb = ollamaService.embed(question);
-        if (queryEmb.length == 0) {
-            return ResponseEntity.status(503).body(Map.of("error", "Ollama unavailable"));
-        }
 
+        if (queryEmb.length == 0) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("error", "Ollama unavailable"));
+        }
         List<Map.Entry<Float, DocItem>> results = documentDBService.search(queryEmb, k, 0.7f);
 
-        List<Map<String, Object>> contexts = results.stream()
-                .map(entry -> Map.<String, Object>of(
-                "id", entry.getValue().getId(),
-                "title", entry.getValue().getTitle(),
-                "distance", entry.getKey()
-            ))
-            .collect(Collectors.toList());
+        List<SearchContextResponse> contexts = results.stream()
+                .map(entry ->
+                        new SearchContextResponse(
+                                entry.getValue().getId(),
+                                entry.getValue().getTitle(),
+                                null,
+                                entry.getKey()
+                        )
+                )
+                .toList();
 
         return ResponseEntity.ok(Map.of("contexts", contexts));
     }
 
     @PostMapping("/doc/ask")
-    public ResponseEntity<Map<String, Object>> askQuestion(@RequestBody Map<String, Object> body) {
-        String question = (String) body.get("question");
-        int k = body.containsKey("k") ? ((Number) body.get("k")).intValue() : 3;
-
-        if (question == null || question.isEmpty()) {
+    public ResponseEntity<?> askQuestion(@RequestBody AskQuestionRequest request) {
+        String question = request.getQuestion();
+        int k = request.getK() != null ? request.getK() : 3;
+        if (question == null || question.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Question is required"));
         }
-
-        // Step 1: Embed the question
         float[] queryEmb = ollamaService.embed(question);
+
         if (queryEmb.length == 0) {
-            return ResponseEntity.status(503).body(
-                Map.of("error", "Ollama unavailable. Ensure it's running and models are loaded.")
-            );
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("error", "Ollama unavailable"));
         }
 
-        // Step 2: Retrieve relevant chunks
         List<Map.Entry<Float, DocItem>> results = documentDBService.search(queryEmb, k, 0.7f);
 
         if (results.isEmpty()) {
-            return ResponseEntity.ok(Map.of(
-                "answer", "No relevant documents found. Please insert some documents first.",
-                "model", ollamaService.getGenerateModel(),
-                "contexts", Collections.emptyList(),
-                "docCount", documentDBService.size()
-            ));
+            AskResponse emptyResponse = new AskResponse("No relevant documents found. Please insert documents first.",
+                    ollamaService.getGenerateModel(), Collections.emptyList(), documentDBService.size());
+            return ResponseEntity.ok(emptyResponse);
         }
-
-        // Step 3: Build prompt with context
         StringBuilder contextBuilder = new StringBuilder();
+
         for (int i = 0; i < results.size(); i++) {
             DocItem doc = results.get(i).getValue();
-            contextBuilder.append("[").append(i + 1).append("] ")
-                          .append(doc.getTitle()).append(":\n")
-                          .append(doc.getText()).append("\n\n");
+            contextBuilder.append("[")
+                    .append(i + 1)
+                    .append("] ")
+                    .append(doc.getTitle())
+                    .append(":\n")
+                    .append(doc.getText())
+                    .append("\n\n");
         }
-
-        String prompt = "You are a helpful assistant. Answer the user's question directly. " +
-                       "Use the provided context if it contains relevant information. " +
-                       "If it doesn't, just use your own general knowledge. " +
-                       "IMPORTANT: Do NOT mention the 'context', 'provided text', or say things like 'the context doesn't mention'. " +
-                       "Just answer the question naturally.\n\n" +
-                       "Context:\n" + contextBuilder.toString() +
-                       "Question: " + question + "\n\n" +
-                       "Answer:";
-
-        // Step 4: Generate answer
+        String prompt = "You are a helpful assistant. " + "Answer naturally.\n\n" + "Context:\n" + contextBuilder + "Question: " + question + "\n\nAnswer:";
         String answer = ollamaService.generate(prompt);
 
-        // Step 5: Return everything
-        List<Map<String, Object>> contexts = results.stream()
-                .map(entry -> Map.<String, Object>of(
-                "id", entry.getValue().getId(),
-                "title", entry.getValue().getTitle(),
-                "text", entry.getValue().getText(),
-                "distance", entry.getKey()
-            ))
-            .collect(Collectors.toList());
+        List<SearchContextResponse> contexts = results.stream()
+                .map(entry ->
+                        new SearchContextResponse(
+                                entry.getValue().getId(),
+                                entry.getValue().getTitle(),
+                                entry.getValue().getText(),
+                                entry.getKey()
+                        )
+                )
+                .toList();
 
-        return ResponseEntity.ok(Map.of(
-            "answer", answer,
-            "model", ollamaService.getGenerateModel(),
-            "contexts", contexts,
-            "docCount", documentDBService.size()
-        ));
+        AskResponse response = new AskResponse(answer, ollamaService.getGenerateModel(), contexts, documentDBService.size());
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/status")
-    public ResponseEntity<Map<String, Object>> status() {
+    public ResponseEntity<?> status() {
         boolean available = ollamaService.isAvailable();
-        
         return ResponseEntity.ok(Map.of(
-            "ollamaAvailable", available,
-            "embedModel", ollamaService.getEmbedModel(),
-            "genModel", ollamaService.getGenerateModel(),
-            "docCount", documentDBService.size(),
-            "docDims", documentDBService.getDimensions()
-        ));
+                        "ollamaAvailable",
+                        available,
+                        "embedModel",
+                        ollamaService.getEmbedModel(),
+                        "genModel",
+                        ollamaService.getGenerateModel(),
+                        "docCount",
+                        documentDBService.size(),
+                        "docDims",
+                        documentDBService.getDimensions()
+                )
+        );
     }
 }
