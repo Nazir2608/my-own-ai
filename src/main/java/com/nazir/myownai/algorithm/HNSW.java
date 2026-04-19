@@ -1,6 +1,7 @@
 package com.nazir.myownai.algorithm;
 
 import com.nazir.myownai.model.VectorItem;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -65,7 +66,7 @@ public class HNSW {
             List<Map.Entry<Float, Integer>> candidates = searchLayer(item.getEmbedding(), ep, efConstruction, lc, distFn);
             int maxM = (lc == 0) ? M0 : M;
             List<Integer> selected = selectNeighbors(candidates, maxM);
-            
+
             node.neighbors.get(lc).addAll(selected);
 
             // Add bidirectional links
@@ -73,7 +74,7 @@ public class HNSW {
                 Node neighbor = graph.get(neighborId);
                 if (neighbor != null && lc < neighbor.neighbors.size()) {
                     neighbor.neighbors.get(lc).add(id);
-                    
+
                     // Prune if needed
                     if (neighbor.neighbors.get(lc).size() > maxM) {
                         pruneConnections(neighbor, lc, maxM, distFn);
@@ -91,12 +92,12 @@ public class HNSW {
     }
 
     private List<Map.Entry<Float, Integer>> searchLayer(float[] query, int entryPoint, int ef, int layer,
-                                                         DistanceMetric.DistanceFunction distFn) {
+                                                        DistanceMetric.DistanceFunction distFn) {
         Set<Integer> visited = new HashSet<>();
-        PriorityQueue<Map.Entry<Float, Integer>> candidates = 
-            new PriorityQueue<>(Map.Entry.comparingByKey());
-        PriorityQueue<Map.Entry<Float, Integer>> found = 
-            new PriorityQueue<>((a, b) -> Float.compare(b.getKey(), a.getKey()));
+        PriorityQueue<Map.Entry<Float, Integer>> candidates =
+                new PriorityQueue<>(Map.Entry.comparingByKey());
+        PriorityQueue<Map.Entry<Float, Integer>> found =
+                new PriorityQueue<>((a, b) -> Float.compare(b.getKey(), a.getKey()));
 
         Node epNode = graph.get(entryPoint);
         if (epNode == null) return Collections.emptyList();
@@ -121,7 +122,7 @@ public class HNSW {
                 if (neighborNode == null) continue;
 
                 float neighborDist = distFn.calculate(query, neighborNode.item.getEmbedding());
-                
+
                 if (found.size() < ef || neighborDist < found.peek().getKey()) {
                     candidates.offer(Map.entry(neighborDist, neighborId));
                     found.offer(Map.entry(neighborDist, neighborId));

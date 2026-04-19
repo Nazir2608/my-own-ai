@@ -1,7 +1,7 @@
 package com.nazir.myownai.algorithm;
 
 public class DistanceMetric {
-    
+
     public static float euclidean(float[] a, float[] b) {
         float sum = 0;
         for (int i = 0; i < a.length; i++) {
