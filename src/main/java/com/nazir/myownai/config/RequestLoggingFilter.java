@@ -21,9 +21,7 @@ public class RequestLoggingFilter implements Filter {
         HttpServletResponse httpResponse = (HttpServletResponse) response;
 
         System.out.println("INCOMING " + httpRequest.getMethod() + " " + httpRequest.getRequestURI());
-
         chain.doFilter(request, response);
-
         System.out.println("OUTGOING " + httpRequest.getMethod() + " " + httpRequest.getRequestURI() + " STATUS " + httpResponse.getStatus());
     }
 }

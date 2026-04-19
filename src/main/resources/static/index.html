@@ -976,11 +976,11 @@
     }
 
     // ======= BOOT =======
-    console.log('🚀 MY-OWN-AI Starting...');
+    console.log('MY-OWN-AI Starting...');
     resize();
     drawFrame();
     loadItems().then(() => {
-        console.log('✅ Items loaded');
+        console.log('Items loaded');
         loadHNSW();
     });
     checkOllamaStatus();
@@ -988,8 +988,8 @@
     // Test API connectivity
     setTimeout(() => {
         apiCall(API + '/health')
-            .then(() => console.log('✅ API Health Check Passed'))
-            .catch(() => console.error('❌ API Health Check Failed'));
+            .then(() => console.log('API Health Check Passed'))
+            .catch(() => console.error('API Health Check Failed'));
     }, 1000);
 </script>
 </body>
