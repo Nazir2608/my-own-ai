@@ -1,4 +1,4 @@
-package com.myownai.model;
+package com.nazir.myownai.model;
 
 public class DocItem {
     private int id;

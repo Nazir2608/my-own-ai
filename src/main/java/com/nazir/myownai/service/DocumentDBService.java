@@ -1,9 +1,9 @@
-package com.myownai.service;
+package com.nazir.myownai.service;
 
-import com.myownai.algorithm.DistanceMetric;
-import com.myownai.algorithm.HNSW;
-import com.myownai.model.DocItem;
-import com.myownai.model.VectorItem;
+import com.nazir.myownai.algorithm.DistanceMetric;
+import com.nazir.myownai.algorithm.HNSW;
+import com.nazir.myownai.model.DocItem;
+import com.nazir.myownai.model.VectorItem;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 

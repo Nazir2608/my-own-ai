@@ -1,6 +1,6 @@
-package com.myownai.algorithm;
+package com.nazir.myownai.algorithm;
 
-import com.myownai.model.VectorItem;
+import com.nazir.myownai.model.VectorItem;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 

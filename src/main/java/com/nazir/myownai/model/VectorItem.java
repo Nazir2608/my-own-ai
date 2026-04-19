@@ -1,4 +1,4 @@
-package com.myownai.model;
+package com.nazir.myownai.model;
 
 import java.util.Arrays;
 

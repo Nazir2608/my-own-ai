@@ -1,8 +1,12 @@
-package com.myownai.service;
+package com.nazir.myownai.service;
 
 import com.myownai.algorithm.*;
-import com.myownai.model.SearchResult;
-import com.myownai.model.VectorItem;
+import com.nazir.myownai.algorithm.BruteForce;
+import com.nazir.myownai.algorithm.DistanceMetric;
+import com.nazir.myownai.algorithm.HNSW;
+import com.nazir.myownai.algorithm.KDTree;
+import com.nazir.myownai.model.SearchResult;
+import com.nazir.myownai.model.VectorItem;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 

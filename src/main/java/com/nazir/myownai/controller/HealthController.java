@@ -1,4 +1,4 @@
-package com.myownai.controller;
+package com.nazir.myownai.controller;
 
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;

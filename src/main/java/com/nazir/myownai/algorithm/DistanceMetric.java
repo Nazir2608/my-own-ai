@@ -1,4 +1,4 @@
-package com.myownai.algorithm;
+package com.nazir.myownai.algorithm;
 
 public class DistanceMetric {
     

@@ -1,4 +1,4 @@
-package com.myownai.config;
+package com.nazir.myownai.config;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;

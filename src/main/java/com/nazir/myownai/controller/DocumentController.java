@@ -1,8 +1,8 @@
-package com.myownai.controller;
+package com.nazir.myownai.controller;
 
-import com.myownai.model.DocItem;
-import com.myownai.service.DocumentDBService;
-import com.myownai.service.OllamaService;
+import com.nazir.myownai.model.DocItem;
+import com.nazir.myownai.service.DocumentDBService;
+import com.nazir.myownai.service.OllamaService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
