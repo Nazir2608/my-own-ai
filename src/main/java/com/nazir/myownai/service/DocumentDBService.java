@@ -26,12 +26,6 @@ public class DocumentDBService {
     @Value("${document.max-tokens-per-chunk:512}")
     private int maxTokensPerChunk;  // ADD THIS LINE
 
-    @Value("${vectordb.hnsw.m:16}")
-    private int hnswM;
-
-    @Value("${vectordb.hnsw.ef-construction:200}")
-    private int hnswEfConstruction;
-
     private final Map<Integer, DocItem> store = new ConcurrentHashMap<>();
     private final HNSW hnsw = new HNSW(16, 200);
     private int nextId = 1;
@@ -90,7 +84,6 @@ public class DocumentDBService {
         if (text == null || text.trim().isEmpty()) {
             return Collections.emptyList();
         }
-
         String[] words = text.split("\\s+");
         int totalWords = words.length;
 
@@ -111,27 +104,22 @@ public class DocumentDBService {
 
         for (int i = 0; i < totalWords; i += step) {
             int end = Math.min(i + effectiveChunkSize, totalWords);
-
             // Build chunk from word array
             StringBuilder chunkBuilder = new StringBuilder();
             for (int j = i; j < end; j++) {
                 if (j > i) chunkBuilder.append(" ");
                 chunkBuilder.append(words[j]);
             }
-
             String chunk = chunkBuilder.toString().trim();
 
-            // Only add non-empty chunks
             if (!chunk.isEmpty()) {
                 chunks.add(chunk);
             }
 
-            // Break if we've reached the end
             if (end == totalWords) {
                 break;
             }
         }
-
         return chunks;
     }
 

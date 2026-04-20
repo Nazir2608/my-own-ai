@@ -47,9 +47,8 @@ public class OllamaService {
         // Check text length before sending
         int wordCount = text.split("\\s+").length;
         if (wordCount > 500) {
-            System.err.println("⚠️  WARNING: Text has " + wordCount + " words. May exceed embedding model limits.");
-            System.err.println("⚠️  Truncating to first 400 words...");
-
+            System.err.println(" WARNING: Text has " + wordCount + " words. May exceed embedding model limits.");
+            System.err.println("Truncating to first 400 words...");
             // Truncate to safe size
             String[] words = text.split("\\s+");
             text = String.join(" ", java.util.Arrays.copyOfRange(words, 0, Math.min(400, words.length)));
@@ -80,11 +79,11 @@ public class OllamaService {
             }
         } catch (WebClientResponseException e) {
             String errorBody = e.getResponseBodyAsString();
-            System.err.println("❌ Ollama embedding error: " + e.getStatusCode() + " - " + errorBody);
+            System.err.println("Ollama embedding error: " + e.getStatusCode() + " - " + errorBody);
 
             // If error is about context length, try with truncated text
             if (errorBody.contains("context length") || errorBody.contains("input length")) {
-                System.err.println("⚠️  Input too long. Truncating and retrying...");
+                System.err.println("Input too long. Truncating and retrying...");
 
                 // Aggressive truncation (first 200 words)
                 String[] words = text.split("\\s+");
@@ -93,7 +92,7 @@ public class OllamaService {
                 return embedTruncated(truncated);
             }
         } catch (Exception e) {
-            System.err.println("❌ Ollama connection error: " + e.getMessage());
+            System.err.println("Ollama connection error: " + e.getMessage());
         }
         return new float[0];
     }
@@ -126,7 +125,7 @@ public class OllamaService {
                 return result;
             }
         } catch (Exception e) {
-            System.err.println("❌ Even truncated embedding failed: " + e.getMessage());
+            System.err.println("Even truncated embedding failed: " + e.getMessage());
         }
         return new float[0];
     }
