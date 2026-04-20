@@ -28,12 +28,10 @@ public class FileParserService {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("File is empty");
         }
-
         String filename = file.getOriginalFilename();
         if (filename == null) {
             throw new IllegalArgumentException("Filename is null");
         }
-
         String extension = getFileExtension(filename).toLowerCase();
 
         return switch (extension) {
@@ -135,7 +133,6 @@ public class FileParserService {
         if (text == null) {
             return "";
         }
-
         return text
                 // Remove excessive whitespace
                 .replaceAll("[ \\t]+", " ")
