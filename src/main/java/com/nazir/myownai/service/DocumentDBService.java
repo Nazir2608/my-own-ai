@@ -14,11 +14,17 @@ import java.util.stream.Collectors;
 @Service
 public class DocumentDBService {
 
-    @Value("${document.chunk.words:250}")
+    @Value("${document.chunk.words:150}")
     private int chunkWords;
 
-    @Value("${document.chunk.overlap:30}")
+    @Value("${document.chunk.overlap:20}")
     private int overlapWords;
+
+    @Value("${document.max-words-per-chunk:150}")
+    private int maxWordsPerChunk;  // ADD THIS LINE
+
+    @Value("${document.max-tokens-per-chunk:512}")
+    private int maxTokensPerChunk;  // ADD THIS LINE
 
     @Value("${vectordb.hnsw.m:16}")
     private int hnswM;
@@ -35,14 +41,14 @@ public class DocumentDBService {
         if (dimensions == 0) {
             dimensions = embedding.length;
         }
-        
+
         int id = nextId++;
         DocItem item = new DocItem(id, title, text, embedding);
         store.put(id, item);
-        
+
         VectorItem vectorItem = new VectorItem(id, title, "doc", embedding);
         hnsw.insert(vectorItem, DistanceMetric::cosine);
-        
+
         return id;
     }
 
@@ -50,15 +56,15 @@ public class DocumentDBService {
         if (store.isEmpty()) return Collections.emptyList();
 
         List<Map.Entry<Float, Integer>> results = hnsw.knn(query, k, 50, DistanceMetric::cosine);
-        
+
         return results.stream()
-            .map(entry -> {
-                DocItem item = store.get(entry.getValue());
-                return item != null ? Map.entry(entry.getKey(), item) : null;
-            })
-            .filter(Objects::nonNull)
-            .filter(entry -> entry.getKey() <= maxDistance)
-            .collect(Collectors.toList());
+                .map(entry -> {
+                    DocItem item = store.get(entry.getValue());
+                    return item != null ? Map.entry(entry.getKey(), item) : null;
+                })
+                .filter(Objects::nonNull)
+                .filter(entry -> entry.getKey() <= maxDistance)
+                .collect(Collectors.toList());
     }
 
     public boolean remove(int id) {
@@ -81,22 +87,73 @@ public class DocumentDBService {
     }
 
     public List<String> chunkText(String text) {
-        String[] words = text.split("\\s+");
-        
-        if (words.length <= chunkWords) {
-            return Collections.singletonList(text);
+        if (text == null || text.trim().isEmpty()) {
+            return Collections.emptyList();
         }
 
+        String[] words = text.split("\\s+");
+        int totalWords = words.length;
+
+        // Use configured chunk size, but never exceed max
+        int effectiveChunkSize = Math.min(chunkWords, maxWordsPerChunk);
+        int effectiveOverlap = Math.min(overlapWords, effectiveChunkSize / 3);
+
         List<String> chunks = new ArrayList<>();
-        int step = chunkWords - overlapWords;
-        
-        for (int i = 0; i < words.length; i += step) {
-            int end = Math.min(i + chunkWords, words.length);
-            String chunk = String.join(" ", Arrays.copyOfRange(words, i, end));
-            chunks.add(chunk);
-            if (end == words.length) break;
+
+        if (totalWords <= effectiveChunkSize) {
+            // Small document - return as single chunk
+            chunks.add(text.trim());
+            return chunks;
         }
-        
+
+        // Large document - chunk with overlap
+        int step = effectiveChunkSize - effectiveOverlap;
+
+        for (int i = 0; i < totalWords; i += step) {
+            int end = Math.min(i + effectiveChunkSize, totalWords);
+
+            // Build chunk from word array
+            StringBuilder chunkBuilder = new StringBuilder();
+            for (int j = i; j < end; j++) {
+                if (j > i) chunkBuilder.append(" ");
+                chunkBuilder.append(words[j]);
+            }
+
+            String chunk = chunkBuilder.toString().trim();
+
+            // Only add non-empty chunks
+            if (!chunk.isEmpty()) {
+                chunks.add(chunk);
+            }
+
+            // Break if we've reached the end
+            if (end == totalWords) {
+                break;
+            }
+        }
+
         return chunks;
+    }
+
+    /**
+     * Estimate token count (rough approximation)
+     * Average: 1 word ≈ 1.3 tokens
+     */
+    public int estimateTokens(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        int wordCount = text.split("\\s+").length;
+        return (int) Math.ceil(wordCount * 1.3);
+    }
+
+    /**
+     * Validate chunk size before embedding
+     */
+    public boolean isChunkSizeValid(String chunk) {
+        int estimatedTokens = estimateTokens(chunk);
+        // nomic-embed-text max: 8192 tokens
+        // We use 512 as safe limit per chunk
+        return estimatedTokens <= maxTokensPerChunk;
     }
 }

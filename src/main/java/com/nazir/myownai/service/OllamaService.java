@@ -44,8 +44,22 @@ public class OllamaService {
     }
 
     public float[] embed(String text) {
+        // Check text length before sending
+        int wordCount = text.split("\\s+").length;
+        if (wordCount > 500) {
+            System.err.println("⚠️  WARNING: Text has " + wordCount + " words. May exceed embedding model limits.");
+            System.err.println("⚠️  Truncating to first 400 words...");
+
+            // Truncate to safe size
+            String[] words = text.split("\\s+");
+            text = String.join(" ", java.util.Arrays.copyOfRange(words, 0, Math.min(400, words.length)));
+        }
+
         try {
-            Map<String, Object> request = Map.of("model", embedModel, "prompt", text);
+            Map<String, Object> request = Map.of(
+                    "model", embedModel,
+                    "prompt", text
+            );
 
             Map<String, Object> response = getWebClient()
                     .post()
@@ -65,9 +79,54 @@ public class OllamaService {
                 return result;
             }
         } catch (WebClientResponseException e) {
-            System.err.println("Ollama embedding error: " + e.getMessage());
+            String errorBody = e.getResponseBodyAsString();
+            System.err.println("❌ Ollama embedding error: " + e.getStatusCode() + " - " + errorBody);
+
+            // If error is about context length, try with truncated text
+            if (errorBody.contains("context length") || errorBody.contains("input length")) {
+                System.err.println("⚠️  Input too long. Truncating and retrying...");
+
+                // Aggressive truncation (first 200 words)
+                String[] words = text.split("\\s+");
+                String truncated = String.join(" ", java.util.Arrays.copyOfRange(words, 0, Math.min(200, words.length)));
+
+                return embedTruncated(truncated);
+            }
         } catch (Exception e) {
-            System.err.println("Ollama connection error: " + e.getMessage());
+            System.err.println("❌ Ollama connection error: " + e.getMessage());
+        }
+        return new float[0];
+    }
+
+    /**
+     * Embed with guaranteed truncation (fallback)
+     */
+    private float[] embedTruncated(String text) {
+        try {
+            Map<String, Object> request = Map.of(
+                    "model", embedModel,
+                    "prompt", text
+            );
+
+            Map<String, Object> response = getWebClient()
+                    .post()
+                    .uri("/api/embeddings")
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .timeout(Duration.ofSeconds(timeoutSeconds))
+                    .block();
+
+            if (response != null && response.containsKey("embedding")) {
+                List<Double> embedding = (List<Double>) response.get("embedding");
+                float[] result = new float[embedding.size()];
+                for (int i = 0; i < embedding.size(); i++) {
+                    result[i] = embedding.get(i).floatValue();
+                }
+                return result;
+            }
+        } catch (Exception e) {
+            System.err.println("❌ Even truncated embedding failed: " + e.getMessage());
         }
         return new float[0];
     }

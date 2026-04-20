@@ -1088,6 +1088,18 @@
                 width: 320px;
             }
         }
+
+        .tab-mode-btn.active {
+    background: linear-gradient(135deg, var(--accent), var(--math)) !important;
+    color: white !important;
+    border-color: var(--accent) !important;
+}
+
+#dropZone.dragover {
+    border-color: var(--accent) !important;
+    background: linear-gradient(135deg, rgba(108,99,255,0.1), rgba(179,136,255,0.1)) !important;
+}
+
     </style>
 </head>
 <body>
@@ -1233,25 +1245,75 @@
         </div>
 
         <!-- TAB: DOCUMENTS -->
-        <div class="tab-content" id="tab-docs">
-            <div>
-                <div class="sec">Ollama Status</div>
-                <div class="ollama-status" id="ollamaStatus">Checking…</div>
+        <div>
+            <div class="sec">Insert Document</div>
+
+            <!-- Tab switcher for Text vs File -->
+            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                <button
+                        class="tab-mode-btn active"
+                        data-mode="text"
+                        onclick="switchInsertMode('text')"
+                        style="flex: 1; padding: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; transition: all 0.2s;">
+                    📝 Paste Text
+                </button>
+                <button
+                        class="tab-mode-btn"
+                        data-mode="file"
+                        onclick="switchInsertMode('file')"
+                        style="flex: 1; padding: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; transition: all 0.2s;">
+                    📎 Upload File
+                </button>
             </div>
-            <div>
-                <div class="sec">Insert Document</div>
-                <div style="display:flex;flex-direction:column;gap:8px">
-                    <input type="text" id="docTitle" placeholder="Document title / topic…" />
-                    <textarea id="docText" placeholder="Paste your notes, textbook excerpt, lecture content…&#10;&#10;Long text is automatically split into overlapping chunks and each chunk gets its own real embedding via Ollama's nomic-embed-text model."></textarea>
-                    <button class="btn-g" id="insertDocBtn" onclick="insertDocument()">⚡ EMBED &amp; INSERT</button>
-                    <div id="insertStatus" style="font-size:11px;color:var(--muted)"></div>
-                </div>
+
+            <!-- Text Insert Mode (Original) -->
+            <div id="insert-text-mode" style="display:flex;flex-direction:column;gap:8px">
+                <input type="text" id="docTitle" placeholder="Document title / topic…" />
+                <textarea id="docText" placeholder="Paste your notes, textbook excerpt, lecture content…&#10;&#10;Long text is automatically split into overlapping chunks and each chunk gets its own real embedding via Ollama's nomic-embed-text model."></textarea>
+                <button class="btn-g" id="insertDocBtn" onclick="insertDocument()">⚡ EMBED &amp; INSERT</button>
+                <div id="insertStatus" style="font-size:11px;color:var(--muted)"></div>
             </div>
-            <div>
-                <div class="sec">Stored Documents (<span id="docCountLabel">0</span>)</div>
-                <div class="doc-list" id="docList">
-                    <div style="color:var(--muted);font-size:11px">No documents yet. Insert some above.</div>
+
+            <!-- File Upload Mode (NEW!) -->
+            <div id="insert-file-mode" style="display:none;flex-direction:column;gap:8px">
+                <input type="text" id="fileTitle" placeholder="Document title (optional, uses filename if empty)" />
+
+                <!-- File Drop Zone -->
+                <div id="dropZone"
+                     style="border: 2px dashed var(--border); border-radius: 10px; padding: 30px; text-align: center; cursor: pointer; transition: all 0.3s; background: var(--bg);"
+                     onclick="document.getElementById('fileInput').click()">
+                    <div style="font-size: 40px; margin-bottom: 10px;">📎</div>
+                    <div style="font-size: 13px; color: var(--text); margin-bottom: 6px;">
+                        Click to browse or drag & drop
+                    </div>
+                    <div style="font-size: 10px; color: var(--muted);">
+                        Supported: PDF, DOC, DOCX, TXT (max 10MB)
+                    </div>
                 </div>
+
+                <input
+                        type="file"
+                        id="fileInput"
+                        accept=".pdf,.doc,.docx,.txt"
+                        style="display: none;"
+                        onchange="handleFileSelect(event)" />
+
+                <!-- Selected File Display -->
+                <div id="selectedFileInfo" style="display: none; padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-size: 11px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span id="fileIcon" style="font-size: 20px;">📄</span>
+                        <div style="flex: 1;">
+                            <div id="fileName" style="color: var(--text); font-weight: 600;"></div>
+                            <div id="fileSize" style="color: var(--muted); font-size: 10px;"></div>
+                        </div>
+                        <button onclick="clearFileSelection()" style="background: rgba(243,139,168,0.15); color: var(--red); border: 1px solid rgba(243,139,168,0.3); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 10px; width: auto;">
+                            ✕
+                        </button>
+                    </div>
+                </div>
+
+                <button class="btn-g" id="uploadFileBtn" onclick="uploadFile()" disabled>⚡ UPLOAD &amp; EMBED</button>
+                <div id="uploadStatus" style="font-size:11px;color:var(--muted)"></div>
             </div>
         </div>
 
@@ -1963,6 +2025,160 @@
             .then(() => console.log('✅ API Health Check Passed'))
             .catch(() => console.error('❌ API Health Check Failed'));
     }, 1000);
+
+    // ======= FILE UPLOAD FUNCTIONALITY =======
+
+let selectedFile = null;
+
+// Switch between text and file insert modes
+function switchInsertMode(mode) {
+    document.querySelectorAll('.tab-mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+
+    if (mode === 'text') {
+        document.getElementById('insert-text-mode').style.display = 'flex';
+        document.getElementById('insert-file-mode').style.display = 'none';
+    } else {
+        document.getElementById('insert-text-mode').style.display = 'none';
+        document.getElementById('insert-file-mode').style.display = 'flex';
+    }
+}
+
+// Handle file selection
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    selectedFile = file;
+    displaySelectedFile(file);
+}
+
+// Display selected file info
+function displaySelectedFile(file) {
+    const info = document.getElementById('selectedFileInfo');
+    const icon = document.getElementById('fileIcon');
+    const name = document.getElementById('fileName');
+    const size = document.getElementById('fileSize');
+    const btn = document.getElementById('uploadFileBtn');
+
+    // Set icon based on file type
+    const ext = file.name.split('.').pop().toLowerCase();
+    const icons = {
+        'pdf': '📕',
+        'doc': '📘',
+        'docx': '📘',
+        'txt': '📄'
+    };
+    icon.textContent = icons[ext] || '📄';
+
+    name.textContent = file.name;
+    size.textContent = formatFileSize(file.size);
+
+    info.style.display = 'block';
+    btn.disabled = false;
+}
+
+// Clear file selection
+function clearFileSelection() {
+    selectedFile = null;
+    document.getElementById('fileInput').value = '';
+    document.getElementById('selectedFileInfo').style.display = 'none';
+    document.getElementById('uploadFileBtn').disabled = true;
+}
+
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Drag and drop handlers
+const dropZone = document.getElementById('dropZone');
+
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, preventDefaults, false);
+});
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+['dragenter', 'dragover'].forEach(eventName => {
+    dropZone.addEventListener(eventName, () => {
+        dropZone.classList.add('dragover');
+    }, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, () => {
+        dropZone.classList.remove('dragover');
+    }, false);
+});
+
+dropZone.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+
+    if (files.length > 0) {
+        selectedFile = files[0];
+        displaySelectedFile(files[0]);
+    }
+}, false);
+
+// Upload file
+async function uploadFile() {
+    if (!selectedFile) {
+        document.getElementById('uploadStatus').innerHTML =
+            '<span style="color:var(--red)">⚠ No file selected</span>';
+        return;
+    }
+
+    const title = document.getElementById('fileTitle').value.trim();
+    const btn = document.getElementById('uploadFileBtn');
+    const status = document.getElementById('uploadStatus');
+
+    btn.disabled = true;
+    btn.textContent = 'Uploading...';
+    status.innerHTML = '<span style="color:var(--muted)">📤 Uploading and parsing file...</span>';
+
+    try {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        if (title) {
+            formData.append('title', title);
+        }
+
+        const response = await fetch(API + '/doc/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            status.innerHTML = `<span style="color:var(--red)">✗ ${data.error}</span>`;
+        } else {
+            status.innerHTML = `<span style="color:var(--green)">✓ Uploaded! ${data.chunks} chunk(s) · ${data.dims}D · ${data.wordCount} words</span>`;
+
+            // Clear form
+            document.getElementById('fileTitle').value = '';
+            clearFileSelection();
+
+            // Reload document list
+            await loadDocList();
+            await checkOllamaStatus();
+        }
+    } catch (e) {
+        status.innerHTML = `<span style="color:var(--red)">✗ ${e.message}</span>`;
+    }
+
+    btn.disabled = false;
+    btn.textContent = '⚡ UPLOAD & EMBED';
+}
+
 </script>
 </body>
 </html>
