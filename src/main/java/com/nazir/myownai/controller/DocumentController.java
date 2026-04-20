@@ -7,15 +7,14 @@ import com.nazir.myownai.dto.InsertDocumentRequest;
 import com.nazir.myownai.dto.SearchContextResponse;
 import com.nazir.myownai.model.DocItem;
 import com.nazir.myownai.service.DocumentDBService;
+import com.nazir.myownai.service.FileParserService;
 import com.nazir.myownai.service.OllamaService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api")
@@ -24,10 +23,12 @@ public class DocumentController {
 
     private final DocumentDBService documentDBService;
     private final OllamaService ollamaService;
+    private final FileParserService fileParserService;
 
-    public DocumentController(DocumentDBService documentDBService, OllamaService ollamaService) {
+    public DocumentController(DocumentDBService documentDBService, OllamaService ollamaService, FileParserService fileParserService) {
         this.documentDBService = documentDBService;
         this.ollamaService = ollamaService;
+        this.fileParserService = fileParserService;
     }
 
     @PostMapping("/doc/insert")
@@ -52,6 +53,117 @@ public class DocumentController {
         }
 
         return ResponseEntity.ok(Map.of("ids", ids, "chunks", chunks.size(), "dims", documentDBService.getDimensions()));
+    }
+
+    // FILE UPLOAD INSERT
+    @PostMapping("/doc/upload")
+    public ResponseEntity<Map<String, Object>> uploadDocument(@RequestParam("file") MultipartFile file, @RequestParam(value = "title", required = false) String title) {
+        // Validate file
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "No file uploaded"));
+        }
+
+        String filename = file.getOriginalFilename();
+        if (filename == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid filename")
+            );
+        }
+
+        // Check if file type is supported
+        if (!fileParserService.isSupportedFile(filename)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Unsupported file type. Supported: " +
+                                    String.join(", ", fileParserService.getSupportedExtensions())));
+        }
+
+        // Check file size (10MB limit set in application.properties)
+        long maxSize = 10 * 1024 * 1024; // 10MB
+        if (file.getSize() > maxSize) {
+            return ResponseEntity.badRequest().body(Map.of("error", "File too large. Maximum size: 10MB")
+            );
+        }
+
+        try {
+            // Parse file to extract text
+            String extractedText = fileParserService.parseFile(file);
+
+            if (extractedText == null || extractedText.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "No text could be extracted from file")
+                );
+            }
+
+            // Use filename as title if not provided
+            String docTitle = (title != null && !title.isEmpty()) ? title : filename;
+
+            // Process and insert
+            return processAndInsertDocument(docTitle, extractedText);
+
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "Failed to process file: " + e.getMessage())
+            );
+        }
+    }
+
+    private ResponseEntity<Map<String, Object>> processAndInsertDocument(String title, String text) {
+        // Chunk the text first
+        List<String> chunks = documentDBService.chunkText(text);
+
+        System.out.println("📦 Created " + chunks.size() + " chunks");
+
+        List<Integer> ids = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+
+        for (int i = 0; i < chunks.size(); i++) {
+            String chunk = chunks.get(i);
+
+            // Validate chunk size
+            if (!documentDBService.isChunkSizeValid(chunk)) {
+                System.err.println("⚠️  Chunk " + (i+1) + " is too large (" +
+                        documentDBService.estimateTokens(chunk) + " tokens). Skipping...");
+                warnings.add("Chunk " + (i+1) + " too large (skipped)");
+                continue;
+            }
+
+            System.out.println("📤 Embedding chunk " + (i+1) + "/" + chunks.size() +
+                    " (" + chunk.split("\\s+").length + " words, ~" +
+                    documentDBService.estimateTokens(chunk) + " tokens)");
+
+            float[] embedding = ollamaService.embed(chunk);
+
+            if (embedding.length == 0) {
+                System.err.println("❌ Failed to embed chunk " + (i+1));
+                warnings.add("Failed to embed chunk " + (i+1));
+                continue;
+            }
+
+            String chunkTitle = chunks.size() > 1
+                    ? title + " [" + (i + 1) + "/" + chunks.size() + "]"
+                    : title;
+
+            ids.add(documentDBService.insert(chunkTitle, chunk, embedding));
+            System.out.println("✅ Inserted chunk " + (i+1) + " with ID " + ids.get(ids.size()-1));
+        }
+
+        if (ids.isEmpty()) {
+            return ResponseEntity.status(503).body(
+                    Map.of(
+                            "error", "Failed to embed any chunks. " +
+                                    (!warnings.isEmpty() ? String.join(", ", warnings) : "Ollama may be unavailable.")
+                    )
+            );
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("ids", ids);
+        response.put("chunks", chunks.size());
+        response.put("successfulChunks", ids.size());
+        response.put("dims", documentDBService.getDimensions());
+        response.put("wordCount", text.split("\\s+").length);
+
+        if (!warnings.isEmpty()) {
+            response.put("warnings", warnings);
+        }
+
+        return ResponseEntity.ok(response);
     }
 
     @DeleteMapping("/doc/delete/{id}")
