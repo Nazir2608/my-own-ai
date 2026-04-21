@@ -71,8 +71,7 @@ public class DocumentController {
 
         // Check if file type is supported
         if (!fileParserService.isSupportedFile(filename)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Unsupported file type. Supported: " +
-                                    String.join(", ", fileParserService.getSupportedExtensions())));
+            return ResponseEntity.badRequest().body(Map.of("error", "Unsupported file type. Supported: " + String.join(", ", fileParserService.getSupportedExtensions())));
         }
 
         // Check file size (10MB limit set in application.properties)
@@ -106,9 +105,7 @@ public class DocumentController {
     private ResponseEntity<Map<String, Object>> processAndInsertDocument(String title, String text) {
         // Chunk the text first
         List<String> chunks = documentDBService.chunkText(text);
-
-        System.out.println("📦 Created " + chunks.size() + " chunks");
-
+        System.out.println("Created " + chunks.size() + " chunks");
         List<Integer> ids = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
 
@@ -117,20 +114,20 @@ public class DocumentController {
 
             // Validate chunk size
             if (!documentDBService.isChunkSizeValid(chunk)) {
-                System.err.println("⚠️  Chunk " + (i+1) + " is too large (" +
+                System.err.println("⚠Chunk " + (i+1) + " is too large (" +
                         documentDBService.estimateTokens(chunk) + " tokens). Skipping...");
                 warnings.add("Chunk " + (i+1) + " too large (skipped)");
                 continue;
             }
 
-            System.out.println("📤 Embedding chunk " + (i+1) + "/" + chunks.size() +
+            System.out.println("Embedding chunk " + (i+1) + "/" + chunks.size() +
                     " (" + chunk.split("\\s+").length + " words, ~" +
                     documentDBService.estimateTokens(chunk) + " tokens)");
 
             float[] embedding = ollamaService.embed(chunk);
 
             if (embedding.length == 0) {
-                System.err.println("❌ Failed to embed chunk " + (i+1));
+                System.err.println(" Failed to embed chunk " + (i+1));
                 warnings.add("Failed to embed chunk " + (i+1));
                 continue;
             }
@@ -140,14 +137,13 @@ public class DocumentController {
                     : title;
 
             ids.add(documentDBService.insert(chunkTitle, chunk, embedding));
-            System.out.println("✅ Inserted chunk " + (i+1) + " with ID " + ids.get(ids.size()-1));
+            System.out.println("Inserted chunk " + (i+1) + " with ID " + ids.get(ids.size()-1));
         }
 
         if (ids.isEmpty()) {
             return ResponseEntity.status(503).body(
                     Map.of(
-                            "error", "Failed to embed any chunks. " +
-                                    (!warnings.isEmpty() ? String.join(", ", warnings) : "Ollama may be unavailable.")
+                            "error", "Failed to embed any chunks. " + (!warnings.isEmpty() ? String.join(", ", warnings) : "Ollama may be unavailable.")
                     )
             );
         }
