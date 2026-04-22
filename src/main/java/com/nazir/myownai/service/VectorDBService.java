@@ -1,16 +1,21 @@
 package com.nazir.myownai.service;
-import com.nazir.myownai.algorithm.BruteForce;
+
 import com.nazir.myownai.algorithm.DistanceMetric;
 import com.nazir.myownai.algorithm.HNSW;
 import com.nazir.myownai.algorithm.KDTree;
+import com.nazir.myownai.algorithm.BruteForce;
+import com.nazir.myownai.entity.VectorEntity;
 import com.nazir.myownai.model.SearchResult;
 import com.nazir.myownai.model.VectorItem;
+import com.nazir.myownai.repository.VectorRepository;
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.PostConstruct;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Service
 public class VectorDBService {
@@ -24,40 +29,76 @@ public class VectorDBService {
     @Value("${vectordb.hnsw.ef-construction:200}")
     private int hnswEfConstruction;
 
-    private final Map<Integer, VectorItem> store = new ConcurrentHashMap<>();
+    @Autowired
+    private VectorRepository vectorRepository;
+
+    // In-memory indexes for demo (rebuilt from DB on startup)
     private final BruteForce bruteForce = new BruteForce();
     private KDTree kdTree;
     private HNSW hnsw;
-    private int nextId = 1;
 
     @PostConstruct
     public void init() {
         kdTree = new KDTree(dimensions);
         hnsw = new HNSW(hnswM, hnswEfConstruction);
-        loadDemoData();
+
+        // Load existing vectors from database into memory indexes
+        rebuildIndexes();
+
+        System.out.println("✅ VectorDBService initialized with " + vectorRepository.count() + " vectors from database");
     }
 
-    public int insert(String metadata, String category, float[] embedding) {
-        int id = nextId++;
-        VectorItem item = new VectorItem(id, metadata, category, embedding);
+    /**
+     * Rebuild in-memory indexes from database
+     */
+    @Transactional(readOnly = true)
+    public void rebuildIndexes() {
+        bruteForce.items.clear();
+        kdTree = new KDTree(dimensions);
+        hnsw = new HNSW(hnswM, hnswEfConstruction);
 
-        store.put(id, item);
+        List<VectorEntity> all = vectorRepository.findAll();
+        for (VectorEntity entity : all) {
+            VectorItem item = new VectorItem(
+                    entity.getId(),
+                    entity.getMetadata(),
+                    entity.getCategory(),
+                    entity.getEmbedding()
+            );
+            bruteForce.insert(item);
+            kdTree.insert(item);
+            hnsw.insert(item, DistanceMetric::cosine);
+        }
+
+        System.out.println("🔄 Rebuilt indexes with " + all.size() + " vectors");
+    }
+
+    @Transactional
+    public int insert(String metadata, String category, float[] embedding) {
+        // Save to PostgreSQL
+        VectorEntity entity = new VectorEntity(metadata, category, embedding);
+        VectorEntity saved = vectorRepository.save(entity);
+
+        // Add to in-memory indexes
+        VectorItem item = new VectorItem(saved.getId(), metadata, category, embedding);
         bruteForce.insert(item);
         kdTree.insert(item);
         hnsw.insert(item, DistanceMetric::cosine);
 
-        return id;
+        return saved.getId();
     }
 
+    @Transactional
     public boolean remove(int id) {
-        VectorItem removed = store.remove(id);
-        if (removed == null) return false;
+        if (!vectorRepository.existsById(id)) {
+            return false;
+        }
 
-        bruteForce.remove(id);
-        hnsw.remove(id);
+        // Delete from PostgreSQL
+        vectorRepository.deleteById(id);
 
-        // Rebuild KD-Tree
-        kdTree.rebuild(new ArrayList<>(store.values()));
+        // Rebuild in-memory indexes
+        rebuildIndexes();
 
         return true;
     }
@@ -76,18 +117,18 @@ public class VectorDBService {
 
         long latencyUs = (System.nanoTime() - startTime) / 1000;
 
+        // Fetch full details from database
         List<SearchResult.Hit> hits = new ArrayList<>();
         for (Map.Entry<Float, Integer> entry : rawResults) {
-            VectorItem item = store.get(entry.getValue());
-            if (item != null) {
+            vectorRepository.findById(entry.getValue()).ifPresent(entity -> {
                 hits.add(new SearchResult.Hit(
-                        item.getId(),
-                        item.getMetadata(),
-                        item.getCategory(),
-                        item.getEmbedding(),
+                        entity.getId(),
+                        entity.getMetadata(),
+                        entity.getCategory(),
+                        entity.getEmbedding(),
                         entry.getKey()
                 ));
-            }
+            });
         }
 
         return new SearchResult(hits, latencyUs, algorithm, metric);
@@ -112,73 +153,31 @@ public class VectorDBService {
                 "bruteforceUs", bfUs,
                 "kdtreeUs", kdUs,
                 "hnswUs", hnswUs,
-                "itemCount", store.size()
+                "itemCount", vectorRepository.count()
         );
     }
 
+    @Transactional(readOnly = true)
     public List<VectorItem> getAllItems() {
-        return new ArrayList<>(store.values());
+        return vectorRepository.findAll().stream()
+                .map(entity -> new VectorItem(
+                        entity.getId(),
+                        entity.getMetadata(),
+                        entity.getCategory(),
+                        entity.getEmbedding()
+                ))
+                .collect(Collectors.toList());
     }
 
     public Map<String, Object> getHnswInfo() {
         return hnsw.getInfo();
     }
 
-    public int size() {
-        return store.size();
+    public long size() {
+        return vectorRepository.count();
     }
 
     public int getDimensions() {
         return dimensions;
-    }
-
-    private void loadDemoData() {
-        // CS / Algorithms
-        insert("Linked List: nodes connected by pointers", "cs",
-                new float[]{0.90f, 0.85f, 0.72f, 0.68f, 0.12f, 0.08f, 0.15f, 0.10f, 0.05f, 0.08f, 0.06f, 0.09f, 0.07f, 0.11f, 0.08f, 0.06f});
-        insert("Binary Search Tree: O(log n) search and insert", "cs",
-                new float[]{0.88f, 0.82f, 0.78f, 0.74f, 0.15f, 0.10f, 0.08f, 0.12f, 0.06f, 0.07f, 0.08f, 0.05f, 0.09f, 0.06f, 0.07f, 0.10f});
-        insert("Dynamic Programming: memoization overlapping subproblems", "cs",
-                new float[]{0.82f, 0.76f, 0.88f, 0.80f, 0.20f, 0.18f, 0.12f, 0.09f, 0.07f, 0.06f, 0.08f, 0.07f, 0.08f, 0.09f, 0.06f, 0.07f});
-        insert("Graph BFS and DFS: breadth and depth first traversal", "cs",
-                new float[]{0.85f, 0.80f, 0.75f, 0.82f, 0.18f, 0.14f, 0.10f, 0.08f, 0.06f, 0.09f, 0.07f, 0.06f, 0.10f, 0.08f, 0.09f, 0.07f});
-        insert("Hash Table: O(1) lookup with collision chaining", "cs",
-                new float[]{0.87f, 0.78f, 0.70f, 0.76f, 0.13f, 0.11f, 0.09f, 0.14f, 0.08f, 0.07f, 0.06f, 0.08f, 0.07f, 0.10f, 0.08f, 0.09f});
-
-        // Mathematics
-        insert("Calculus: derivatives integrals and limits", "math",
-                new float[]{0.12f, 0.15f, 0.18f, 0.10f, 0.91f, 0.86f, 0.78f, 0.72f, 0.08f, 0.06f, 0.07f, 0.09f, 0.07f, 0.08f, 0.06f, 0.10f});
-        insert("Linear Algebra: matrices eigenvalues eigenvectors", "math",
-                new float[]{0.20f, 0.18f, 0.15f, 0.12f, 0.88f, 0.90f, 0.82f, 0.76f, 0.09f, 0.07f, 0.08f, 0.06f, 0.10f, 0.07f, 0.08f, 0.09f});
-        insert("Probability: distributions random variables Bayes theorem", "math",
-                new float[]{0.15f, 0.12f, 0.20f, 0.18f, 0.84f, 0.80f, 0.88f, 0.82f, 0.07f, 0.08f, 0.06f, 0.10f, 0.09f, 0.06f, 0.09f, 0.08f});
-        insert("Number Theory: primes modular arithmetic RSA cryptography", "math",
-                new float[]{0.22f, 0.16f, 0.14f, 0.20f, 0.80f, 0.85f, 0.76f, 0.90f, 0.08f, 0.09f, 0.07f, 0.06f, 0.08f, 0.10f, 0.07f, 0.06f});
-        insert("Combinatorics: permutations combinations generating functions", "math",
-                new float[]{0.18f, 0.20f, 0.16f, 0.14f, 0.86f, 0.78f, 0.84f, 0.80f, 0.06f, 0.07f, 0.09f, 0.08f, 0.06f, 0.09f, 0.10f, 0.07f});
-
-        // Food
-        insert("Neapolitan Pizza: wood-fired dough San Marzano tomatoes", "food",
-                new float[]{0.08f, 0.06f, 0.09f, 0.07f, 0.07f, 0.08f, 0.06f, 0.09f, 0.90f, 0.86f, 0.78f, 0.72f, 0.08f, 0.06f, 0.09f, 0.07f});
-        insert("Sushi: vinegared rice raw fish and nori rolls", "food",
-                new float[]{0.06f, 0.08f, 0.07f, 0.09f, 0.09f, 0.06f, 0.08f, 0.07f, 0.86f, 0.90f, 0.82f, 0.76f, 0.07f, 0.09f, 0.06f, 0.08f});
-        insert("Ramen: noodle soup with chashu pork and soft-boiled eggs", "food",
-                new float[]{0.09f, 0.07f, 0.06f, 0.08f, 0.08f, 0.09f, 0.07f, 0.06f, 0.82f, 0.78f, 0.90f, 0.84f, 0.09f, 0.07f, 0.08f, 0.06f});
-        insert("Tacos: corn tortillas with carnitas salsa and cilantro", "food",
-                new float[]{0.07f, 0.09f, 0.08f, 0.06f, 0.06f, 0.07f, 0.09f, 0.08f, 0.78f, 0.82f, 0.86f, 0.90f, 0.06f, 0.08f, 0.07f, 0.09f});
-        insert("Croissant: laminated pastry with buttery flaky layers", "food",
-                new float[]{0.06f, 0.07f, 0.10f, 0.09f, 0.10f, 0.06f, 0.07f, 0.10f, 0.85f, 0.80f, 0.76f, 0.82f, 0.09f, 0.07f, 0.10f, 0.06f});
-
-        // Sports
-        insert("Basketball: fast-paced shooting dribbling slam dunks", "sports",
-                new float[]{0.09f, 0.07f, 0.08f, 0.10f, 0.08f, 0.09f, 0.07f, 0.06f, 0.08f, 0.07f, 0.09f, 0.06f, 0.91f, 0.85f, 0.78f, 0.72f});
-        insert("Football: tackles touchdowns field goals and strategy", "sports",
-                new float[]{0.07f, 0.09f, 0.06f, 0.08f, 0.09f, 0.07f, 0.10f, 0.08f, 0.07f, 0.09f, 0.08f, 0.07f, 0.87f, 0.89f, 0.82f, 0.76f});
-        insert("Tennis: racket volleys groundstrokes and Wimbledon serves", "sports",
-                new float[]{0.08f, 0.06f, 0.09f, 0.07f, 0.07f, 0.08f, 0.06f, 0.09f, 0.09f, 0.06f, 0.07f, 0.08f, 0.83f, 0.80f, 0.88f, 0.82f});
-        insert("Chess: openings endgames tactics strategic board game", "sports",
-                new float[]{0.25f, 0.20f, 0.22f, 0.18f, 0.22f, 0.18f, 0.20f, 0.15f, 0.06f, 0.08f, 0.07f, 0.09f, 0.80f, 0.84f, 0.78f, 0.90f});
-        insert("Swimming: butterfly freestyle backstroke Olympic competition", "sports",
-                new float[]{0.06f, 0.08f, 0.07f, 0.09f, 0.08f, 0.06f, 0.09f, 0.07f, 0.10f, 0.08f, 0.06f, 0.07f, 0.85f, 0.82f, 0.86f, 0.80f});
     }
 }

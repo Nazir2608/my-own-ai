@@ -4,7 +4,7 @@ import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class BruteForce {
-    private final List<VectorItem> items = new CopyOnWriteArrayList<>();
+    public final List<VectorItem> items = new CopyOnWriteArrayList<>();
 
     public void insert(VectorItem item) {
         items.add(item);
