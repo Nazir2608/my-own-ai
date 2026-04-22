@@ -228,7 +228,7 @@ public class DocumentController {
         List<Map.Entry<Float, DocItem>> results = documentDBService.search(queryEmb, k, 0.7f);
 
         if (results.isEmpty()) {
-            AskResponse emptyResponse = new AskResponse("No relevant documents found. Please insert documents first.", ollamaService.getGenerateModel(), Collections.emptyList(), documentDBService.size());
+            AskResponse emptyResponse = new AskResponse("No relevant documents found. Please insert documents first.", ollamaService.getGenerateModel(), Collections.emptyList(), (int) documentDBService.size());
             return ResponseEntity.ok(emptyResponse);
         }
         StringBuilder contextBuilder = new StringBuilder();
@@ -257,7 +257,7 @@ public class DocumentController {
                 )
                 .toList();
 
-        AskResponse response = new AskResponse(answer, ollamaService.getGenerateModel(), contexts, documentDBService.size());
+        AskResponse response = new AskResponse(answer, ollamaService.getGenerateModel(), contexts, (int) documentDBService.size());
         return ResponseEntity.ok(response);
     }
 
